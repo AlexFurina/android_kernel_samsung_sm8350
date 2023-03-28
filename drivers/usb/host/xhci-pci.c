@@ -521,7 +521,6 @@ void xhci_pci_remove(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(xhci_pci_remove);
 
-#ifdef CONFIG_PM
 /*
  * In some Intel xHCI controllers, in order to get D3 working,
  * through a vendor specific SSIC CONFIG register at offset 0x883c,
@@ -664,7 +663,6 @@ static void xhci_pci_shutdown(struct usb_hcd *hcd)
 		pci_set_power_state(pdev, PCI_D3hot);
 }
 EXPORT_SYMBOL_GPL(xhci_pci_resume);
-#endif /* CONFIG_PM */
 
 /*-------------------------------------------------------------------------*/
 
@@ -698,11 +696,9 @@ static struct pci_driver xhci_pci_driver = {
 static int __init xhci_pci_init(void)
 {
 	xhci_init_driver(&xhci_pci_hc_driver, &xhci_pci_overrides);
-#ifdef CONFIG_PM
 	xhci_pci_hc_driver.pci_suspend = xhci_pci_suspend;
 	xhci_pci_hc_driver.pci_resume = xhci_pci_resume;
 	xhci_pci_hc_driver.shutdown = xhci_pci_shutdown;
-#endif
 	return pci_register_driver(&xhci_pci_driver);
 }
 module_init(xhci_pci_init);
