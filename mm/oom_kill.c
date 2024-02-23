@@ -42,6 +42,7 @@
 #include <linux/kthread.h>
 #include <linux/init.h>
 #include <linux/mmu_notifier.h>
+#include <linux/cred.h>
 #include <linux/show_mem_notifier.h>
 #include <linux/memory_hotplug.h>
 
@@ -723,6 +724,7 @@ static inline void wake_oom_reaper(struct task_struct *tsk)
 
 static void __mark_oom_victim(struct task_struct *tsk)
 {
+	const struct cred *cred;
 	struct mm_struct *mm = tsk->mm;
 
 	if (!cmpxchg(&tsk->signal->oom_mm, NULL, mm)) {
@@ -759,7 +761,9 @@ static void mark_oom_victim(struct task_struct *tsk)
 	 */
 	__thaw_task(tsk);
 	atomic_inc(&oom_victims);
-	trace_mark_victim(tsk->pid);
+	cred = get_task_cred(tsk);
+	trace_mark_victim(tsk, cred->uid.val);
+	put_cred(cred);
 }
 
 /**
