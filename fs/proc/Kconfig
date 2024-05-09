@@ -131,3 +131,9 @@ config PROC_DLOG
 	bool "Enable delete logs for improving filesystem debug"
 	depends on PROC_FSLOG
 	default y
+
+config PROC_SPOOF_CMDLINE
+	bool "Spoof locked bootloader properties in cmdline"
+	default n
+	help
+	For Play Integrity API / SafetyNet attestation
