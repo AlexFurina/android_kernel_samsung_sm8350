@@ -167,7 +167,7 @@ static void virt_wifi_scan_result(struct work_struct *work)
 		u8 len;
 		u8 ssid[8];
 	} __packed ssid = {
-		.tag = WLAN_EID_SSID, .len = strlen(VIRT_WIFI_SSID), .len = strlen(VIRT_WIFI_SSID),
+		.tag = WLAN_EID_SSID, .len = VIRT_WIFI_SSID_LEN, .ssid = VIRT_WIFI_SSID,
 	};
 	struct cfg80211_bss *informed_bss;
 	struct virt_wifi_wiphy_priv *priv =
@@ -263,7 +263,7 @@ static void virt_wifi_connect_complete(struct work_struct *work)
 	u8 *requested_bss = priv->connect_requested_bss;
 	bool has_addr = !is_zero_ether_addr(requested_bss);
 	bool right_addr = ether_addr_equal(requested_bss, fake_router_bssid);
-	bool right_ssid = priv->connect_requested_ssid_len == strlen(VIRT_WIFI_SSID) &&
+	bool right_ssid = priv->connect_requested_ssid_len == VIRT_WIFI_SSID_LEN &&
 			  !memcmp(priv->connect_requested_ssid, VIRT_WIFI_SSID,
 				  priv->connect_requested_ssid_len);
 	u16 status = WLAN_STATUS_SUCCESS;
