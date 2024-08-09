@@ -282,6 +282,8 @@ static int clk_rpmh_bcm_send_cmd(struct clk_rpmh *c, bool enable)
 		cmd_state = 0;
 	}
 
+    cmd_state = min(cmd_state, BCM_TCS_CMD_VOTE_MASK);
+
 	if (cmd_state > BCM_TCS_CMD_VOTE_MASK)
 		cmd_state = BCM_TCS_CMD_VOTE_MASK;
 
