@@ -26,7 +26,7 @@ else
 endif
 
 ifneq ($(wildcard $(srctree)/include/crypto/internal/rsa.h),)
-    $(warning [DEFEX] INTEGRITY_ENABLE)
+#    $(warning [DEFEX] INTEGRITY_ENABLE)
     INTEGRITY_ENABLE=true
 endif
 
@@ -61,7 +61,7 @@ ifeq ($(CONFIG_SECURITY_DEFEX_SINGLE_FILE),y)
     $(warning [DEFEX] Single rule file MODE.)
     DEFEX_DEFINES += -DDEFEX_SINGLE_RULES_FILE
 else
-    $(warning [DEFEX] Multiple rule file MODE.)
+#    $(warning [DEFEX] Multiple rule file MODE.)
 endif
 
 # Integrity Feature is applied with permissive mode first.
@@ -160,7 +160,7 @@ ifeq ($(USER_BUILD), true)
         DEFEX_DEFINES += -DDEFEX_DSMS_ENABLE
     endif
 else
-    $(warning [DEFEX] DEBUG_ENABLE)
+#    $(warning [DEFEX] DEBUG_ENABLE)
     defex-y += debug/defex_debug.o
     defex-y += core/defex_sysfs.o
     DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
