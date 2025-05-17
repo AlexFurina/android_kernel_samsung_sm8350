@@ -16,15 +16,15 @@ ccflags-y := -Wformat
 ccflags-y += -I$(srctree)/$(src)
 
 ifeq ($(CONFIG_NGKSM), y)
-    $(warning [NGKSM] CONFIG_NGKSM Enabled)
+#    $(warning [NGKSM] CONFIG_NGKSM Enabled)
 else
-    $(warning [NGKSM] CONFIG_NGKSM Not Enabled)
+#    $(warning [NGKSM] CONFIG_NGKSM Not Enabled)
 endif
 
 ifeq ($(CONFIG_NGKPAD), y)
-    $(warning [NGKSM] CONFIG_NGKPAD Enabled)
+#    $(warning [NGKSM] CONFIG_NGKPAD Enabled)
 else
-    $(warning [NGKSM] CONFIG_NGKPAD Not Enabled)
+#    $(warning [NGKSM] CONFIG_NGKPAD Not Enabled)
 endif
 
 obj-$(CONFIG_NGKSM) += ngksm_main.o
@@ -37,7 +37,7 @@ ifeq ($(CONFIG_NGKPAD),y)
     obj-$(CONFIG_NGKPAD) += ngk_hypervisor_detector.o
 endif
 
-$(warning [NGKSM] TARGET_BUILD_VARIANT $(TARGET_BUILD_VARIANT))
+#$(warning [NGKSM] TARGET_BUILD_VARIANT $(TARGET_BUILD_VARIANT))
 
 ifneq (,$(filter userdebug eng, $(TARGET_BUILD_VARIANT)))
     $(warning [NGKSM] NGK_DEBUG)
@@ -45,6 +45,6 @@ ifneq (,$(filter userdebug eng, $(TARGET_BUILD_VARIANT)))
 endif
 
 ifeq ($(CONFIG_FASTUH), y)
-    $(warning [NGKSM] CONFIG_FASTUH Enabled)
+#    $(warning [NGKSM] CONFIG_FASTUH Enabled)
     ccflags-y += -DCONFIG_NGKSM_UH=true
 endif
