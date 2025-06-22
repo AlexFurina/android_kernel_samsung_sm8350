@@ -2453,12 +2453,7 @@ static int attach_recursive_mnt(struct mount *source_mnt,
 		hlist_del_init(&child->mnt_hash);
 #ifdef CONFIG_FASTUH_KDP
 		q = __lookup_mnt(((struct kdp_mount *)child->mnt_parent)->mnt,
-#else
-		q = __lookup_mnt(&child->mnt_parent->mnt,
 #endif
-				 child->mnt_mountpoint);
-		if (q)
-			mnt_change_mountpoint(child, smp, q);
 		/* Notice when we are propagating across user namespaces */
 		if (child->mnt_parent->mnt_ns->user_ns != user_ns)
 			lock_mnt_tree(child);
@@ -2467,6 +2462,10 @@ static int attach_recursive_mnt(struct mount *source_mnt,
 		kdp_assign_mnt_flags(((struct kdp_mount *)child)->mnt, nsflags);
 #else
 		child->mnt.mnt_flags &= ~MNT_LOCKED;
+		q = __lookup_mnt(&child->mnt_parent->mnt,
+				 child->mnt_mountpoint);
+		if (q)
+			mnt_change_mountpoint(child, smp, q);
 #endif
 		commit_tree(child);
 	}
