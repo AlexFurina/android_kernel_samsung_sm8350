@@ -40,7 +40,7 @@ config SEC_ABC_COMMON_KUNIT
 
 comment "Samsung ABC Hub Options"
 config SEC_ABC_HUB
-	tristate "Samsung ABC Hub Feature"
+	bool "Samsung ABC Hub Feature"
 	depends on SEC_ABC
 	default n
 	help
@@ -115,7 +115,7 @@ config SEC_ABC_HUB_KUNIT
 
 comment "Samsung ABC Hub Connect Detect for ABC HUB"
 config SEC_ABC_HUB_COND
-	tristate "Samsung ABC Hub Connect Detect Feature"
+	bool "Samsung ABC Hub Connect Detect Feature"
 	depends on SEC_ABC_HUB
 	help
 	  Samsung COND(Connect Detect) Feature

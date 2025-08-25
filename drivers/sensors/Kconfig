@@ -208,7 +208,6 @@ config SENSORS_A96T3X6_BLOCK_SAR_ONLY
 config SENSORS_A96T365IF
 	bool "Choose A96T365IF"
 	default n
-	help
 
 config SENSORS_ISG5320A
 	depends on I2C
