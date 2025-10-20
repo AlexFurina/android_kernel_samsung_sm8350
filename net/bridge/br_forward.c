@@ -252,7 +252,12 @@ static void maybe_deliver_addr(struct net_bridge_port *p, struct sk_buff *skb,
 
 	/* Even with hairpin, no soliloquies - prevent breaking IPv6 DAD */
 	if (skb->dev == p->dev && ether_addr_equal(src, addr))
-		return;
+	__skb_push(skb, ETH_HLEN);
+	nskb = pskb_copy(skb, GFP_ATOMIC);
+	__skb_pull(skb, ETH_HLEN);
+	if (!nskb) {
+ 		 return;
+ 	}
 
 	skb = skb_copy(skb, GFP_ATOMIC);
 	if (!skb) {
