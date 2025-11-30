@@ -1214,6 +1214,7 @@ static int context_struct_to_string(struct policydb *p,
 				    char **scontext, u32 *scontext_len)
 {
 	char *scontextp;
+	gfp_t kmalloc_flag = 0;
 
 	if (scontext)
 		*scontext = NULL;
