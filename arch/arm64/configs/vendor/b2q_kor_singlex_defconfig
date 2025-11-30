@@ -487,9 +487,7 @@ CONFIG_TLB_CONF_HANDLER=y
 #
 # Hypervisor
 #
-CONFIG_FASTUH=y
-CONFIG_FASTUH_RKP=y
-CONFIG_FASTUH_KDP=y
+
 # end of Hypervisor
 
 #
