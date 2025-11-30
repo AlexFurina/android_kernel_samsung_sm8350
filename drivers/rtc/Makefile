@@ -188,3 +188,4 @@ obj-$(CONFIG_RTC_DRV_XGENE)	+= rtc-xgene.o
 obj-$(CONFIG_RTC_DRV_ZYNQMP)	+= rtc-zynqmp.o
 obj-$(CONFIG_SEC_RTC_STATUS)	+= rtc-status.o
 obj-$(CONFIG_RTC_AUTO_PWRON)	+= power-on-alarm.o
+obj-$(CONFIG_RTC_LIB_KUNIT_TEST)	+= lib_test.o

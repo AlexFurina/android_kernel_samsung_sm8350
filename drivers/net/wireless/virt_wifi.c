@@ -137,6 +137,8 @@ static struct ieee80211_supported_band band_5ghz = {
 /* Assigned at module init. Guaranteed locally-administered and unicast. */
 static u8 fake_router_bssid[ETH_ALEN] __ro_after_init = {};
 
+#define VIRT_WIFI_SSID "VirtWifi"
+
 /* Called with the rtnl lock held. */
 static int virt_wifi_scan(struct wiphy *wiphy,
 			  struct cfg80211_scan_request *request)
@@ -165,7 +167,7 @@ static void virt_wifi_scan_result(struct work_struct *work)
 		u8 len;
 		u8 ssid[8];
 	} __packed ssid = {
-		.tag = WLAN_EID_SSID, .len = 8, .ssid = "VirtWifi",
+		.tag = WLAN_EID_SSID, .len = VIRT_WIFI_SSID_LEN, .ssid = VIRT_WIFI_SSID,
 	};
 	struct cfg80211_bss *informed_bss;
 	struct virt_wifi_wiphy_priv *priv =
@@ -215,6 +217,8 @@ struct virt_wifi_netdev_priv {
 	struct net_device *upperdev;
 	u32 tx_packets;
 	u32 tx_failed;
+        u32 connect_requested_ssid_len;
+        u8 connect_requested_ssid[IEEE80211_MAX_SSID_LEN];
 	u8 connect_requested_bss[ETH_ALEN];
 	bool is_up;
 	bool is_connected;
@@ -230,6 +234,12 @@ static int virt_wifi_connect(struct wiphy *wiphy, struct net_device *netdev,
 
 	if (priv->being_deleted || !priv->is_up)
 		return -EBUSY;
+
+	if (!sme->ssid)
+		return -EINVAL;
+
+	priv->connect_requested_ssid_len = sme->ssid_len;
+	memcpy(priv->connect_requested_ssid, sme->ssid, sme->ssid_len);
 
 	could_schedule = schedule_delayed_work(&priv->connect, HZ * 2);
 	if (!could_schedule)
@@ -253,9 +263,12 @@ static void virt_wifi_connect_complete(struct work_struct *work)
 	u8 *requested_bss = priv->connect_requested_bss;
 	bool has_addr = !is_zero_ether_addr(requested_bss);
 	bool right_addr = ether_addr_equal(requested_bss, fake_router_bssid);
+	bool right_ssid = priv->connect_requested_ssid_len == VIRT_WIFI_SSID_LEN &&
+			  !memcmp(priv->connect_requested_ssid, VIRT_WIFI_SSID,
+				  priv->connect_requested_ssid_len);
 	u16 status = WLAN_STATUS_SUCCESS;
 
-	if (!priv->is_up || (has_addr && !right_addr))
+	if (!priv->is_up || (requested_bss && !right_addr) || !right_ssid)
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	else
 		priv->is_connected = true;

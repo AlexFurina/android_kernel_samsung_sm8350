@@ -245,13 +245,19 @@ static void maybe_deliver_addr(struct net_bridge_port *p, struct sk_buff *skb,
 {
 	struct net_device *dev = BR_INPUT_SKB_CB(skb)->brdev;
 	const unsigned char *src = eth_hdr(skb)->h_source;
+        struct sk_buff *nskb;
 
 	if (!should_deliver(p, skb))
 		return;
 
 	/* Even with hairpin, no soliloquies - prevent breaking IPv6 DAD */
 	if (skb->dev == p->dev && ether_addr_equal(src, addr))
-		return;
+	__skb_push(skb, ETH_HLEN);
+	nskb = pskb_copy(skb, GFP_ATOMIC);
+	__skb_pull(skb, ETH_HLEN);
+	if (!nskb) {
+ 		 return;
+ 	}
 
 	skb = skb_copy(skb, GFP_ATOMIC);
 	if (!skb) {
@@ -259,6 +265,8 @@ static void maybe_deliver_addr(struct net_bridge_port *p, struct sk_buff *skb,
 		return;
 	}
 
+         skb = nskb;
+         __skb_pull(skb, ETH_HLEN);
 	if (!is_broadcast_ether_addr(addr))
 		memcpy(eth_hdr(skb)->h_dest, addr, ETH_ALEN);
 
