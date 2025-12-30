@@ -326,6 +326,7 @@ enum transaction_flags {
 	TF_STATUS_CODE	= 0x08,	/* contents are a 32-bit status code */
 	TF_ACCEPT_FDS	= 0x10,	/* allow replies with file descriptors */
 	TF_CLEAR_BUF	= 0x20,	/* clear buffer on txn complete */
+	TF_UPDATE_TXN	= 0x40,	/* update the outdated pending async txn */
 };
 
 struct binder_transaction_data {
@@ -482,7 +483,7 @@ enum binder_driver_return_protocol {
 
 	BR_FAILED_REPLY = _IO('r', 17),
 	/*
-	 * The the last transaction (either a bcTRANSACTION or
+	 * The last transaction (either a bcTRANSACTION or
 	 * a bcATTEMPT_ACQUIRE) failed (e.g. out of memory).  No parameters.
 	 */
 
@@ -598,12 +599,12 @@ enum binder_driver_command_protocol {
 	/*
 	 * int: handle
 	 * void *: cookie
-         */
+	 */
 
 	BC_CLEAR_FREEZE_NOTIFICATION = _IOW('c', 20,
 					    struct binder_handle_cookie),
 	/*
-        * int: handle
+	 * int: handle
 	 * void *: cookie
 	 */
 

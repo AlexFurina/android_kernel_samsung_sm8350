@@ -25,10 +25,12 @@
 #include <linux/sizes.h>
 #include "binder_alloc.h"
 #include "binder_trace.h"
+#include <trace/hooks/binder.h>
 
 #ifdef CONFIG_SAMSUNG_FREECESS
 #include <linux/freecess.h>
 #endif
+
 struct list_lru binder_alloc_lru;
 
 #define MAX_ALLOCATION_SIZE (1024 * 1024)
@@ -220,7 +222,7 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 		mm = alloc->vma_vm_mm;
 
 	if (mm) {
-		down_write(&mm->mmap_sem);
+		mmap_write_lock(mm);
 		vma = alloc->vma;
 	}
 
@@ -276,10 +278,9 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 			alloc->pages_high = index + 1;
 
 		trace_binder_alloc_page_end(alloc, index);
-		/* vm_insert_page does not seem to increment the refcount */
 	}
 	if (mm) {
-		up_write(&mm->mmap_sem);
+		mmap_write_unlock(mm);
 		mmput_async(mm);
 	}
 	return 0;
@@ -312,39 +313,24 @@ err_page_ptr_cleared:
 	}
 err_no_vma:
 	if (mm) {
-		up_write(&mm->mmap_sem);
+		mmap_write_unlock(mm);
 		mmput_async(mm);
 	}
 	return vma ? -ENOMEM : -ESRCH;
 }
 
-
 static inline void binder_alloc_set_vma(struct binder_alloc *alloc,
 		struct vm_area_struct *vma)
 {
-	if (vma)
-		alloc->vma_vm_mm = vma->vm_mm;
-	/*
-	 * If we see alloc->vma is not NULL, buffer data structures set up
-	 * completely. Look at smp_rmb side binder_alloc_get_vma.
-	 * We also want to guarantee new alloc->vma_vm_mm is always visible
-	 * if alloc->vma is set.
-	 */
-	smp_wmb();
-	alloc->vma = vma;
+	/* pairs with smp_load_acquire in binder_alloc_get_vma() */
+	smp_store_release(&alloc->vma, vma);
 }
 
 static inline struct vm_area_struct *binder_alloc_get_vma(
 		struct binder_alloc *alloc)
 {
-	struct vm_area_struct *vma = NULL;
-
-	if (alloc->vma) {
-		/* Look at description in binder_alloc_set_vma */
-		smp_rmb();
-		vma = alloc->vma;
-	}
-	return vma;
+	/* pairs with smp_store_release in binder_alloc_set_vma() */
+	return smp_load_acquire(&alloc->vma);
 }
 
 static bool debug_low_async_space_locked(struct binder_alloc *alloc, int pid)
@@ -356,7 +342,7 @@ static bool debug_low_async_space_locked(struct binder_alloc *alloc, int pid)
 	 * and at some point we'll catch them in the act. This is more efficient
 	 * than keeping a map per pid.
 	 */
-	struct rb_node *n = alloc->free_buffers.rb_node;
+	struct rb_node *n;
 	struct binder_buffer *buffer;
 	size_t total_alloc_size = 0;
 	size_t num_buffers = 0;
@@ -368,8 +354,7 @@ static bool debug_low_async_space_locked(struct binder_alloc *alloc, int pid)
 			continue;
 		if (!buffer->async_transaction)
 			continue;
-		total_alloc_size += binder_alloc_buffer_size(alloc, buffer)
-			+ sizeof(struct binder_buffer);
+		total_alloc_size += binder_alloc_buffer_size(alloc, buffer);
 		num_buffers++;
 	}
 
@@ -406,7 +391,9 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 	void __user *end_page_addr;
 	size_t size, data_offsets_size;
 	int ret;
+	size_t alloc_size;
 
+	/* Check binder_alloc is fully initialized */
 	if (!binder_alloc_get_vma(alloc)) {
 		binder_alloc_debug(BINDER_DEBUG_USER_ERROR,
 				   "%d: binder_alloc_buf, no vma\n",
@@ -430,13 +417,10 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 				alloc->pid, extra_buffers_size);
 		return ERR_PTR(-EINVAL);
 	}
-
-	/* Pad 0-size buffers so they get assigned unique addresses */
-	size = max(size, sizeof(void *));
-
+	trace_android_vh_binder_alloc_new_buf_locked(size, &alloc->free_async_space, is_async);
 #ifdef CONFIG_SAMSUNG_FREECESS
-	if (is_async && (alloc->free_async_space < 3 * size
-		|| alloc->free_async_space < alloc->buffer_size/4)) {
+	if (is_async && (alloc->free_async_space < 3*(size + sizeof(struct binder_buffer))
+		|| (alloc->free_async_space < alloc->buffer_size/4))) {
 		struct task_struct *p;
 
 		rcu_read_lock();
@@ -447,26 +431,35 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 	}
 #endif
 
-
-	if (is_async && alloc->free_async_space < size) {
-		pr_info("%d: binder_alloc_buf size %zd(%zd) failed, no async space left\n",
-				alloc->pid, size, alloc->free_async_space);
-		return ERR_PTR(-ENOSPC);
+	alloc_size = size + sizeof(struct binder_buffer);
+	if (!is_async) {
+		// If allocation size is more than 1M, throw it away and return ENOSPC err
+		if (MAX_ALLOCATION_SIZE <= alloc_size) { // 1M
+			pr_info("%d: binder_alloc_buf size %zd failed, too large size\n",
+					alloc->pid, size);
+			return ERR_PTR(-ENOSPC);
+		} else if (MAX_ALLOCATION_SIZE * 7 / 10 <= alloc_size) {
+			pr_info("%d: binder_alloc_buf size %zd, try to alloc large size\n",
+					alloc->pid, size);
+		}
+	} else {
+		if (alloc->free_async_space < alloc_size) {
+			pr_info("%d: binder_alloc_buf size %zd(%zd) failed, no async space left\n",
+					alloc->pid, size, alloc->free_async_space);
+			return ERR_PTR(-ENOSPC);
+		} else if (MAX_ASYNC_ALLOCATION_SIZE <= alloc_size) { //512K
+			pr_info("%d: binder_alloc_buf size %zd(%zd) failed, too large async size\n",
+					alloc->pid, size, alloc->free_async_space);
+			return ERR_PTR(-ENOSPC);
+		} else if (MAX_ASYNC_ALLOCATION_SIZE * 7 / 10 <= alloc_size) {
+			pr_info("%d: binder_alloc_buf size %zd(%zd), try to alloc large async size\n",
+					alloc->pid, size, alloc->free_async_space);
+		}
 	}
 
-	// If allocation size is more than 1M, throw it away and return ENOSPC err
-	if (MAX_ALLOCATION_SIZE <= size + sizeof(struct binder_buffer)) { // 1M
-		pr_info("%d: binder_alloc_buf size %zd failed, too large size\n",
-				alloc->pid, size);
-		return ERR_PTR(-ENOSPC);
-	}
+	/* Pad 0-size buffers so they get assigned unique addresses */
+	size = max(size, sizeof(void *));
 
-	// If allocation size for async is more than 512K, throw it away and return ENOPC
-	if (MAX_ASYNC_ALLOCATION_SIZE <= size + sizeof(struct binder_buffer) && is_async) { //512K
-		pr_info("%d: binder_alloc_buf size %zd(%zd) failed, too large async size\n",
-				alloc->pid, size, alloc->free_async_space);
-		return ERR_PTR(-ENOSPC);
-	}
 
 	while (n) {
 		buffer = rb_entry(n, struct binder_buffer, rb_node);
@@ -572,11 +565,11 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 		alloc->free_async_space -= size;
 		if ((system_server_pid == alloc->pid) && (alloc->free_async_space <= 153600)) { // 150K
 			pr_info("%d: [free_size<150K] binder_alloc_buf size %zd async free %zd\n",
-				alloc->pid, size, alloc->free_async_space);
+					alloc->pid, size, alloc->free_async_space);
 		}
 		if ((system_server_pid == alloc->pid) && (size >= 122880)) { // 120K
 			pr_info("%d: [alloc_size>120K] binder_alloc_buf size %zd async free %zd\n",
-				alloc->pid, size, alloc->free_async_space);
+					alloc->pid, size, alloc->free_async_space);
 		}
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC_ASYNC,
 			     "%d: binder_alloc_buf size %zd async free %zd\n",
@@ -649,6 +642,7 @@ static void binder_delete_free_buffer(struct binder_alloc *alloc,
 {
 	struct binder_buffer *prev, *next = NULL;
 	bool to_free = true;
+
 	BUG_ON(alloc->buffers.next == &buffer->entry);
 	prev = binder_buffer_prev(buffer);
 	BUG_ON(!prev->free);
@@ -754,7 +748,7 @@ static void binder_alloc_clear_buf(struct binder_alloc *alloc,
  * @alloc:	binder_alloc for this proc
  * @buffer:	kernel pointer to buffer
  *
- * Free the buffer allocated via binder_alloc_new_buffer()
+ * Free the buffer allocated via binder_alloc_new_buf()
  */
 void binder_alloc_free_buf(struct binder_alloc *alloc,
 			    struct binder_buffer *buffer)
@@ -796,6 +790,12 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 	const char *failure_string;
 	struct binder_buffer *buffer;
 
+	if (unlikely(vma->vm_mm != alloc->vma_vm_mm)) {
+		ret = -EINVAL;
+		failure_string = "invalid vma->vm_mm";
+		goto err_invalid_mm;
+	}
+
 	mutex_lock(&binder_alloc_mmap_lock);
 	if (alloc->buffer_size) {
 		ret = -EBUSY;
@@ -829,8 +829,9 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 	buffer->free = 1;
 	binder_insert_free_buffer(alloc, buffer);
 	alloc->free_async_space = alloc->buffer_size / 2;
+
+	/* Signal binder_alloc is fully initialized */
 	binder_alloc_set_vma(alloc, vma);
-	mmgrab(alloc->vma_vm_mm);
 
 	return 0;
 
@@ -843,6 +844,7 @@ err_alloc_pages_failed:
 	alloc->buffer_size = 0;
 err_already_mapped:
 	mutex_unlock(&binder_alloc_mmap_lock);
+err_invalid_mm:
 	binder_alloc_debug(BINDER_DEBUG_USER_ERROR,
 			   "%s: %d %lx-%lx %s failed %d\n", __func__,
 			   alloc->pid, vma->vm_start, vma->vm_end,
@@ -1051,9 +1053,9 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 	mm = alloc->vma_vm_mm;
 	if (!mmget_not_zero(mm))
 		goto err_mmget;
-	if (!down_read_trylock(&mm->mmap_sem))
-		goto err_down_read_mmap_sem_failed;
-	vma = find_vma(mm, page_addr);
+	if (!mmap_read_trylock(mm))
+		goto err_mmap_read_lock_failed;
+	vma = vma_lookup(mm, page_addr);
 	if (vma && vma != binder_alloc_get_vma(alloc))
 		goto err_invalid_vma;
 
@@ -1067,7 +1069,7 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 
 		trace_binder_unmap_user_end(alloc, index);
 	}
-	up_read(&mm->mmap_sem);
+	mmap_read_unlock(mm);
 	mmput_async(mm);
 
 	trace_binder_unmap_kernel_start(alloc, index);
@@ -1082,8 +1084,8 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 	return LRU_REMOVED_RETRY;
 
 err_invalid_vma:
-	up_read(&mm->mmap_sem);
-err_down_read_mmap_sem_failed:
+	mmap_read_unlock(mm);
+err_mmap_read_lock_failed:
 	mmput_async(mm);
 err_mmget:
 err_page_already_freed:
@@ -1125,6 +1127,8 @@ static struct shrinker binder_shrinker = {
 void binder_alloc_init(struct binder_alloc *alloc)
 {
 	alloc->pid = current->group_leader->pid;
+	alloc->vma_vm_mm = current->mm;
+	mmgrab(alloc->vma_vm_mm);
 	mutex_init(&alloc->mutex);
 	INIT_LIST_HEAD(&alloc->buffers);
 }

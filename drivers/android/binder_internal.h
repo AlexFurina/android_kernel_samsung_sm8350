@@ -107,47 +107,19 @@ static inline int __init init_binderfs(void)
 }
 #endif
 
-int binder_stats_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_stats);
-
-int binder_state_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_state);
-
-int binder_state_hashed_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_state_hashed);
-
-int binder_transactions_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_transactions);
-
-int binder_transactions_hashed_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_transactions_hashed);
-
-int binder_transaction_log_show(struct seq_file *m, void *unused);
-DEFINE_SHOW_ATTRIBUTE(binder_transaction_log);
-
-struct binder_transaction_log_entry {
-	int debug_id;
-	int debug_id_done;
-	int call_type;
-	int from_proc;
-	int from_thread;
-	int target_handle;
-	int to_proc;
-	int to_thread;
-	int to_node;
-	int data_size;
-	int offsets_size;
-	int return_error_line;
-	uint32_t return_error;
-	uint32_t return_error_param;
-	char context_name[BINDERFS_MAX_NAME + 1];
+struct binder_debugfs_entry {
+	const char *name;
+	umode_t mode;
+	const struct file_operations *fops;
+	void *data;
 };
 
-struct binder_transaction_log {
-	atomic_t cur;
-	bool full;
-	struct binder_transaction_log_entry entry[32];
-};
+extern const struct binder_debugfs_entry binder_debugfs_entries[];
+
+#define binder_for_each_debugfs_entry(entry)	\
+	for ((entry) = binder_debugfs_entries;	\
+	     (entry)->name;			\
+	     (entry)++)
 
 enum binder_stat_types {
 	BINDER_STAT_PROC,
@@ -412,6 +384,9 @@ enum binder_prio_state {
  *                        (invariant after initialized)
  * @tsk                   task_struct for group_leader of process
  *                        (invariant after initialized)
+ * @cred                  struct cred associated with the `struct file`
+ *                        in binder_open()
+ *                        (invariant after initialized)
  * @deferred_work_node:   element for binder_deferred_list
  *                        (protected by binder_deferred_lock)
  * @deferred_work:        bitmap of deferred work to perform
@@ -474,6 +449,7 @@ struct binder_proc {
 	struct list_head waiting_threads;
 	int pid;
 	struct task_struct *tsk;
+	const struct cred *cred;
 	struct hlist_node deferred_work_node;
 	int deferred_work;
 	int outstanding_txns;
@@ -501,35 +477,20 @@ struct binder_proc {
 };
 
 /**
- * struct binder_proc_ext - binder process bookkeeping
- * @proc:            element for binder_procs list
- * @cred                  struct cred associated with the `struct file`
- *                        in binder_open()
- *                        (invariant after initialized)
- * @delivered_freeze:     list of delivered freeze notification
- *                        (protected by @inner_lock)
- *
- * Extended binder_proc -- needed to add the "cred" field without
- * changing the KMI for binder_proc.
+ * struct binder_proc_wrap - wrapper to preserve KMI in binder_proc
+ * @proc:                    binder_proc being wrapped
+ * @delivered_freeze:        list of delivered freeze notification
+ *                           (protected by @inner_lock)
  */
-struct binder_proc_ext {
+struct binder_proc_wrap {
 	struct binder_proc proc;
-	const struct cred *cred;
 	struct list_head delivered_freeze;
 };
 
-static inline const struct cred *binder_get_cred(struct binder_proc *proc)
-{
-	struct binder_proc_ext *eproc;
-
-	eproc = container_of(proc, struct binder_proc_ext, proc);
-	return eproc->cred;
-}
-
 static inline
-struct binder_proc_ext *proc_wrapper(struct binder_proc *proc)
+struct binder_proc_wrap *proc_wrapper(struct binder_proc *proc)
 {
-	return container_of(proc, struct binder_proc_ext, proc);
+	return container_of(proc, struct binder_proc_wrap, proc);
 }
 
 /**
@@ -623,16 +584,16 @@ struct binder_transaction {
 	struct binder_thread *to_thread;
 	struct binder_transaction *to_parent;
 	unsigned need_reply:1;
-	/* unsigned is_dead:1; */	/* not used at the moment */
+	/* unsigned is_dead:1; */       /* not used at the moment */
 
 	struct binder_buffer *buffer;
-	unsigned int	code;
-	unsigned int	flags;
-	struct binder_priority	priority;
-	struct binder_priority	saved_priority;
-	bool    set_priority_called;
-	bool    is_nested;
-	kuid_t	sender_euid;
+	unsigned int    code;
+	unsigned int    flags;
+	struct binder_priority priority;
+	struct binder_priority saved_priority;
+	bool set_priority_called;
+	bool is_nested;
+	kuid_t  sender_euid;
 	struct list_head fd_fixups;
 	binder_uintptr_t security_ctx;
 	/**
@@ -665,6 +626,4 @@ struct binder_object {
 	};
 };
 
-extern struct binder_transaction_log binder_transaction_log;
-extern struct binder_transaction_log binder_transaction_log_failed;
 #endif /* _LINUX_BINDER_INTERNAL_H */
