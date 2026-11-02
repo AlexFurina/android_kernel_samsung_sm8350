@@ -100,14 +100,6 @@
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
 
-#ifdef CONFIG_FASTUH_RKP
-#include <linux/rkp.h>
-#endif
-
-#ifdef CONFIG_FASTUH_KDP
-#include <linux/kdp.h>
-#endif
-
 #if defined(CONFIG_SEC_KUNIT) && defined(CONFIG_UML)
 extern int test_executor_init(void);
 #endif
@@ -121,11 +113,6 @@ extern int test_executor_init(void);
 
 #include <linux/sec_debug.h>
 #include <linux/sec_bootstat.h>
-
-#ifdef CONFIG_SECURITY_DEFEX
-#include <linux/defex.h>
-void __init __weak defex_load_rules(void) { }
-#endif
 
 static int kernel_init(void *);
 
@@ -695,18 +682,11 @@ asmlinkage __visible void __init start_kernel(void)
 	trap_init();
 	mm_init();
 	poking_init();
-#ifdef CONFIG_FASTUH_RKP
-	rkp_init();
-#endif
 	ftrace_init();
 
 	/* trace_printk can be enabled here */
 	early_trace_init();
 
-#ifdef CONFIG_FASTUH_KDP
-	// move to after, early_trace_init. cuz security_integrity_current failed
-	kdp_cred_enable = 1;
-#endif
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
 	 * timer interrupt). Full topology setup happens at smp_init()
@@ -821,10 +801,6 @@ asmlinkage __visible void __init start_kernel(void)
 		efi_enter_virtual_mode();
 #endif
 	thread_stack_cache_init();
-#ifdef CONFIG_FASTUH_KDP
-	if (kdp_cred_enable)
-		kdp_init();
-#endif
 	cred_init();
 	fork_init();
 	proc_caches_init();
@@ -1247,9 +1223,6 @@ static int __ref kernel_init(void *unused)
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
 		if (!ret) {
-#ifdef CONFIG_FASTUH_RKP
-			rkp_deferred_init();
-#endif
 			return 0;
 		}
 		pr_err("Failed to execute %s (error %d)\n",
@@ -1348,7 +1321,4 @@ static noinline void __init kernel_init_freeable(void)
 	 */
 
 	integrity_load_keys();
-#ifdef CONFIG_SECURITY_DEFEX
-	defex_load_rules();
-#endif
 }
