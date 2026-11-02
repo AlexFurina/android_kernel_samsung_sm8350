@@ -400,14 +400,20 @@ static int com_to_usb_cp(struct max77705_muic_data *muic_data)
 static void com_to_uart_ap(struct max77705_muic_data *muic_data)
 {
 	u8 reg_val;
+	if (IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)) {
+		pr_info("%s: UART AP path blocked in ship mode, set COM_OPEN\n",
+			__func__);
+		reg_val = COM_OPEN;
 #if IS_ENABLED(CONFIG_MUIC_MAX77705_PDIC)
-	if ((muic_data->pdata->opmode == OPMODE_MUIC) && muic_data->pdata->rustproof_on)
+	} else if ((muic_data->pdata->opmode == OPMODE_MUIC) &&
+			muic_data->pdata->rustproof_on) {
 #else
-	if (muic_data->pdata->rustproof_on)
+	} else if (muic_data->pdata->rustproof_on) {
 #endif
 		reg_val = COM_OPEN;
-	else
+	} else {
 		reg_val = COM_UART;
+	}
 
 	pr_info("%s(%d)\n", __func__, reg_val);
 
@@ -419,14 +425,20 @@ static void com_to_uart_cp(struct max77705_muic_data *muic_data)
 {
 	u8 reg_val;
 
+	if (IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)) {
+		pr_info("%s: UART CP path blocked in ship mode, set COM_OPEN\n",
+			__func__);
+		reg_val = COM_OPEN;
 #if IS_ENABLED(CONFIG_MUIC_MAX77705_PDIC)
-	if ((muic_data->pdata->opmode == OPMODE_MUIC) && muic_data->pdata->rustproof_on)
+	} else if ((muic_data->pdata->opmode == OPMODE_MUIC) &&
+			muic_data->pdata->rustproof_on) {
 #else
-	if (muic_data->pdata->rustproof_on)
+	} else if (muic_data->pdata->rustproof_on) {
 #endif
 		reg_val = COM_OPEN;
-	else
+	} else {
 		reg_val = COM_UART_CP;
+	}
 
 	pr_info("%s(%d)\n", __func__, reg_val);
 
