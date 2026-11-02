@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2010-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/interconnect.h>
@@ -13,6 +14,7 @@
 
 #include "kgsl_device.h"
 #include "kgsl_bus.h"
+#include "kgsl_power_trace.h"
 #include "kgsl_pwrscale.h"
 #include "kgsl_sysfs.h"
 #include "kgsl_trace.h"
@@ -213,7 +215,7 @@ void kgsl_pwrctrl_pwrlevel_change(struct kgsl_device *device,
 			pwr->previous_pwrlevel,
 			pwr->pwrlevels[old_level].gpu_freq);
 
-	trace_gpu_frequency(pwrlevel->gpu_freq/1000, 0);
+	KGSL_TRACE_GPU_FREQ(pwrlevel->gpu_freq/1000, 0);
 
 	/*
 	 * Some targets do not support the bandwidth requirement of
@@ -828,7 +830,15 @@ static ssize_t _gpu_model_show(struct kgsl_device *device, char *buf)
 {
 	char model_str[32] = {0};
 
-	device->ftbl->gpu_model(device, model_str, sizeof(model_str));
+	if (!device)
+		pr_err("device is null!\n");
+	else if (!device->ftbl)
+		pr_err("ftbl is null!\n");
+
+	else if (!device->ftbl->gpu_model)
+		pr_err("gpu_model is null!\n");
+	else
+		device->ftbl->gpu_model(device, model_str, sizeof(model_str));
 
 	return scnprintf(buf, PAGE_SIZE, "%s\n", model_str);
 }
@@ -923,7 +933,7 @@ static ssize_t _max_clock_mhz_show(struct kgsl_device *device, char *buf)
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
-		pwr->pwrlevels[pwr->thermal_pwrlevel].gpu_freq / 1000000);
+		pwr->pwrlevels[pwr->sysfs_thermal_pwrlevel].gpu_freq / 1000000);
 }
 
 static ssize_t max_clock_mhz_show(struct device *dev,
@@ -1868,7 +1878,7 @@ static int _wake(struct kgsl_device *device)
 		kgsl_pwrctrl_axi(device, KGSL_PWRFLAGS_ON);
 		kgsl_pwrscale_wake(device);
 		kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_ON);
-		trace_gpu_frequency(
+		KGSL_TRACE_GPU_FREQ(
 			pwr->pwrlevels[pwr->active_pwrlevel].gpu_freq/1000, 0);
 		/* fall through */
 	case KGSL_STATE_MINBW:
@@ -2045,7 +2055,7 @@ _slumber(struct kgsl_device *device)
 		kgsl_pwrctrl_clk_set_options(device, false);
 		kgsl_pwrctrl_disable(device);
 		kgsl_pwrscale_sleep(device);
-		trace_gpu_frequency(0, 0);
+		KGSL_TRACE_GPU_FREQ(0, 0);
 		kgsl_pwrctrl_set_state(device, KGSL_STATE_SLUMBER);
 		break;
 	case KGSL_STATE_SUSPEND:
@@ -2055,7 +2065,7 @@ _slumber(struct kgsl_device *device)
 		break;
 	case KGSL_STATE_AWARE:
 		kgsl_pwrctrl_disable(device);
-		trace_gpu_frequency(0, 0);
+		KGSL_TRACE_GPU_FREQ(0, 0);
 		kgsl_pwrctrl_set_state(device, KGSL_STATE_SLUMBER);
 		break;
 	default:

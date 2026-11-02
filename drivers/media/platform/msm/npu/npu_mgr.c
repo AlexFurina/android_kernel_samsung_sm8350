@@ -1619,6 +1619,7 @@ int32_t npu_host_unload_network(struct npu_client *client,
 		pr_err("fw in error state, skip unload network in fw\n");
 		goto free_network;
 	}
+
 	network->is_unloading = true;
 
 	pr_debug("Unload network %lld\n", network->id);

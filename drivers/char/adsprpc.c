@@ -42,6 +42,7 @@
 #include <linux/iommu.h>
 #include <linux/sort.h>
 #include <linux/cred.h>
+#include <linux/dma-iommu.h>
 #include <linux/msm_dma_iommu_mapping.h>
 #include "adsprpc_compat.h"
 #include "adsprpc_shared.h"
@@ -53,6 +54,7 @@
 #include <linux/stat.h>
 #include <linux/preempt.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/sec_debug.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/fastrpc.h>
@@ -462,6 +464,7 @@ struct fastrpc_smmu {
 	int faults;
 	int secure;
 	int coherent;
+	int best_fit;
 };
 
 struct fastrpc_session_ctx {
@@ -1265,13 +1268,14 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 			map->refs--;
 		if (!map->refs && !map->is_persistent)
 			hlist_del_init(&map->hn);
-		spin_unlock(&me->hlock);
 		if (map->refs > 0) {
 			ADSPRPC_WARN(
 				"multiple references for remote heap size %zu va 0x%lx ref count is %d\n",
 				map->size, map->va, map->refs);
+			spin_unlock(&me->hlock);
 			return;
 		}
+		spin_unlock(&me->hlock);
 		if (map->is_persistent && map->in_use) {
 			spin_lock(&me->hlock);
 			map->in_use = false;
@@ -1443,6 +1447,11 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd,
 				goto bail;
 		}
 	} else if (mflags == FASTRPC_DMAHANDLE_NOMAP) {
+		if (map->attr & FASTRPC_ATTR_KEEP_MAP) {
+		    pr_err("Invalid attribute 0x%x for fd %d\n", map->attr, fd);
+			err = -EINVAL;
+			goto bail;
+		}
 		VERIFY(err, !IS_ERR_OR_NULL(map->buf = dma_buf_get(fd)));
 		if (err) {
 			ADSPRPC_ERR("dma_buf_get failed for fd %d ret %ld\n",
@@ -4867,7 +4876,7 @@ static int fastrpc_internal_munmap(struct fastrpc_file *fl,
 			"user application %s trying to unmap without initialization\n",
 			current->comm);
 		err = -EHOSTDOWN;
-		goto bail;
+		return err;
 	}
 	mutex_lock(&fl->internal_map_mutex);
 
@@ -4980,6 +4989,7 @@ static int fastrpc_internal_mem_map(struct fastrpc_file *fl,
 	int err = 0;
 	struct fastrpc_mmap *map = NULL;
 
+	mutex_lock(&fl->internal_map_mutex);
 	VERIFY(err, fl->dsp_proc_init == 1);
 	if (err) {
 		pr_err("adsprpc: ERROR: %s: user application %s trying to map without initialization\n",
@@ -5021,6 +5031,7 @@ bail:
 			mutex_unlock(&fl->map_mutex);
 		}
 	}
+	mutex_unlock(&fl->internal_map_mutex);
 	return err;
 }
 
@@ -5030,6 +5041,7 @@ static int fastrpc_internal_mem_unmap(struct fastrpc_file *fl,
 	int err = 0;
 	struct fastrpc_mmap *map = NULL;
 
+	mutex_lock(&fl->internal_map_mutex);
 	VERIFY(err, fl->dsp_proc_init == 1);
 	if (err) {
 		pr_err("adsprpc: ERROR: %s: user application %s trying to map without initialization\n",
@@ -5079,6 +5091,7 @@ bail:
 			mutex_unlock(&fl->map_mutex);
 		}
 	}
+	mutex_unlock(&fl->internal_map_mutex);
 	return err;
 }
 
@@ -5409,6 +5422,7 @@ skip_dump_wait:
 	spin_unlock(&fl->apps->hlock);
 	kfree(fl->debug_buf);
 	kfree(fl->gidlist.gids);
+	fl->debug_buf_alloced_attempted = 0;
 	if (!fl->sctx) {
 		kfree(fl->dev_pm_qos_req);
 		kfree(fl);
@@ -5872,7 +5886,7 @@ static int fastrpc_set_process_info(struct fastrpc_file *fl)
 	int err = 0, buf_size = 0;
 	char strpid[PID_SIZE];
 	char cur_comm[TASK_COMM_LEN];
-
+	
 	memcpy(cur_comm, current->comm, TASK_COMM_LEN);
 	cur_comm[TASK_COMM_LEN-1] = '\0';
 	fl->tgid = current->tgid;
@@ -5911,6 +5925,7 @@ static int fastrpc_set_process_info(struct fastrpc_file *fl)
 				cur_comm, __func__, fl->debug_buf);
 			fl->debugfs_file = NULL;
 			kfree(fl->debug_buf);
+			fl->debug_buf_alloced_attempted = 0;
 			fl->debug_buf = NULL;
 		}
 	}
@@ -6709,6 +6724,13 @@ static int fastrpc_cb_probe(struct device *dev)
 
 	dma_set_max_seg_size(sess->smmu.dev, DMA_BIT_MASK(32));
 	dma_set_seg_boundary(sess->smmu.dev, (unsigned long)DMA_BIT_MASK(64));
+	err = iommu_dma_enable_best_fit_algo(sess->smmu.dev);
+	if (err) {
+		ADSPRPC_ERR("enabling SMMU best fit algo failed for %s with err %d\n",
+			sess->smmu.dev_name, err);
+		goto bail;
+	}
+	sess->smmu.best_fit = 1;
 
 	of_property_read_u32_array(dev->of_node, "qcom,iommu-dma-addr-pool",
 			dma_addr_pool, 2);
@@ -6873,6 +6895,7 @@ static void configure_secure_channels(uint32_t secure_domains)
 
 		me->channel[ii].secure = secure;
 		ADSPRPC_INFO("domain %d configured as secure %d\n", ii, secure);
+		printk("adsprpc: domain %d configured as secure %d\n", ii, secure);
 	}
 }
 
@@ -6953,6 +6976,31 @@ static struct attribute_group msm_remote_dsp_attr_group = {
 	.attrs = msm_remote_dsp_attrs,
 };
 
+#ifdef CONFIG_QGKI
+#define CDSP_SIGNOFF_BLOCK 0x2377
+static unsigned int signoff_val;
+static int __init signoff_setup(char *str)
+{
+	get_option(&str, &signoff_val);
+	return 0;
+}
+early_param("signoff", signoff_setup);
+
+unsigned int is_signoff_block(void)
+{
+	printk("is_signoff_block : 0x%08x\n", signoff_val);
+	if (signoff_val == CDSP_SIGNOFF_BLOCK)
+			return 1;
+
+	return 0;
+}
+#else
+unsigned int is_signoff_block(void)
+{
+	return 0;
+}
+#endif
+
 static int fastrpc_probe(struct platform_device *pdev)
 {
 	int err = 0;
@@ -6981,7 +7029,7 @@ static int fastrpc_probe(struct platform_device *pdev)
 		of_property_read_u32(dev->of_node, "qcom,rpc-latency-us",
 			&me->latency);
 		if (of_get_property(dev->of_node,
-			"qcom,secure-domains", NULL) != NULL) {
+			"qcom,secure-domains", NULL) != NULL && is_signoff_block()) {
 			VERIFY(err, !of_property_read_u32(dev->of_node,
 					  "qcom,secure-domains",
 			      &secure_domains));

@@ -770,7 +770,7 @@ void brcmf_sdiod_sgtable_alloc(struct brcmf_sdio_dev *sdiodev)
 
 	nents = max_t(uint, BRCMF_DEFAULT_RXGLOM_SIZE,
 		      sdiodev->settings->bus.sdio.txglomsz);
-	nents *= 2;
+	nents += (nents >> 4) + 1;
 
 	WARN_ON(nents > sdiodev->max_segment_count);
 
@@ -1168,9 +1168,13 @@ static struct sdio_driver brcmf_sdmmc_driver = {
 	},
 };
 
-int brcmf_sdio_register(void)
+void brcmf_sdio_register(void)
 {
-	return sdio_register_driver(&brcmf_sdmmc_driver);
+	int ret;
+
+	ret = sdio_register_driver(&brcmf_sdmmc_driver);
+	if (ret)
+		brcmf_err("sdio_register_driver failed: %d\n", ret);
 }
 
 void brcmf_sdio_exit(void)
