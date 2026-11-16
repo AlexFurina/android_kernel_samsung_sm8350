@@ -10773,9 +10773,6 @@
 		msm_power_dou,qfprom_raw_pte_row3_27_nr = <0x1>;
 		msm_power_dou,qfprom_raw_pte_row3_27_shift = <0x1b>;
 	};
-	samsung,sec_hdm {
-		memory-region = <&hdm_region>;
-	};
 	samsung,subsystem-sleep-debug {
 		compatible = "samsung,subsystem-sleep-debug";
 	};
@@ -10813,11 +10810,6 @@
 		no-map;
 		reg = <0x0 0xf0900000 0x0 0x200000>;
 	};
-	tima_mem: tima_region@B0100000 {
-		compatible = "removed-dma-pool";
-		no-map;
-		reg = <0x0 0xb0100000 0x0 0x100000>;
-	};
 	ramoops@1B0B00000 {
 		compatible = "ramoops";
 		reg = <0x0 0xf0b00000 0x0 0x100000>;
@@ -10830,11 +10822,6 @@
 		compatible = "removed-dma-pool";
 		no-map;
 		reg = <0x0 0xa0001000 0x0 0x1000>;
-	};
-	hdm_region: hdm_region@9FB00000 {
-		compatible = "removed-dma-pool";
-		no-map;
-		reg = <0x0 0x9fb00000 0x0 0x1000>;
 	};
 };
 
